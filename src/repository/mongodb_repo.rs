@@ -1,18 +1,22 @@
-use std::env;
+use std::{env, str::FromStr};
 extern crate dotenv;
 use dotenv::dotenv;
 
-use crate::models::doc_model::Doc;
+use crate::models::{doc_model::Doc, states_models::DatabaseState};
 
 use mongodb::{
-    bson::{doc, extjson::de::Error, oid::ObjectId}, //modify here
-    results::{DeleteResult, InsertOneResult, UpdateResult},
-    sync::{Client, Collection},
+    bson::{doc, oid::ObjectId}, //modify here
+    sync::{Client, Collection, Database},
+};
+
+use super::{
+    crud_repo::{CrudError, CrudRepo},
+    database_state::DatabaseStateChecker,
 };
 
 pub struct MongoRepo {
     docs: Collection<Doc>,
-    client: Client,
+    db: Database,
 }
 
 impl MongoRepo {
@@ -32,34 +36,80 @@ impl MongoRepo {
         let db = client.database(db_name.as_str());
         let docs: Collection<Doc> = db.collection("docs");
 
-        MongoRepo { docs, client }
+        MongoRepo { docs, db }
     }
+}
 
-    pub fn create_doc(&self, new_doc: Doc) -> Result<InsertOneResult, Error> {
-        let new_doc = Doc {
+impl DatabaseStateChecker for MongoRepo {
+    fn get_state(&self) -> DatabaseState {
+        let mut database_status = "DOWN";
+        let collection_names = self.db.list_collection_names(None);
+        if collection_names.is_ok() {
+            database_status = "UP";
+        }
+        let collections_optional = collection_names.ok();
+        let documents_count = self.docs.count_documents(None, None).ok();
+
+        DatabaseState {
+            status: database_status.to_string(),
+            documents_count: documents_count,
+            collections: collections_optional,
+        }
+    }
+}
+
+impl CrudRepo<Doc> for MongoRepo {
+    fn create(&self, item: Doc) -> Result<String, CrudError> {
+        let item = Doc {
             id: None,
-            info: new_doc.info,
+            info: item.info,
         };
-        let doc = self
-            .docs
-            .insert_one(new_doc, None)
-            .ok()
-            .expect("Error creating new doc");
-        Ok(doc)
+        match self.docs.insert_one(item, None) {
+            Ok(result) => {
+                print!("{:?}", result.inserted_id);
+                match result.inserted_id.as_object_id() {
+                    Some(inserted_id_obj) => Ok(inserted_id_obj.to_string()),
+                    None => Err(CrudError::new(String::from_str("Insert failed").unwrap())),
+                }
+            }
+            Err(e) => Err(CrudError::new(e.to_string())),
+        }
     }
-
-    pub fn get_doc(&self, id: &String) -> Result<Doc, Error> {
+    fn update(&self, id: &String, item: Doc) -> Result<Option<String>, CrudError> {
         let obj_id = ObjectId::parse_str(id).unwrap();
         let filter = doc! {"_id": obj_id};
-        let doc_detail = self
-            .docs
-            .find_one(filter, None)
-            .ok()
-            .expect("Error getting document");
-        Ok(doc_detail.unwrap())
+        let new_doc = doc! {
+            "$set":
+                {
+                    "id": item.id,
+                    "info": item.info,
+                },
+        };
+        match self.docs.update_one(filter, new_doc, None) {
+            Ok(result) => match result.matched_count {
+                1 => Ok(Some(id.to_string())),
+                _ => Ok(None),
+            },
+            Err(e) => Err(CrudError::new(e.to_string())),
+        }
     }
-
-    pub fn get_all_docs(&self) -> Result<Vec<Doc>, Error> {
+    fn get(&self, id: &String) -> Result<Doc, CrudError> {
+        let obj_id = ObjectId::parse_str(id).unwrap();
+        let filter = doc! {"_id": obj_id};
+        match self.docs.find_one(filter, None) {
+            Ok(doc_details) => Ok(doc_details.unwrap()),
+            Err(e) => Err(CrudError::new(e.to_string())),
+        }
+    }
+    fn delete(&self, id: &String) -> Result<u64, CrudError> {
+        let obj_id = ObjectId::parse_str(id).unwrap();
+        let filter = doc! {"_id": obj_id};
+        match self.docs.delete_one(filter, None) {
+            Ok(result) => Ok(result.deleted_count),
+            Err(e) => Err(CrudError::new(e.to_string())),
+        }
+    }
+    fn get_all(&self) -> Result<Vec<Doc>, CrudError> {
         let cursors = self
             .docs
             .find(None, None)
@@ -67,38 +117,5 @@ impl MongoRepo {
             .expect("Error getting list of docs");
         let docs = cursors.map(|doc| doc.unwrap()).collect();
         Ok(docs)
-    }
-
-    pub fn delete_doc(&self, id: &String) -> Result<DeleteResult, Error> {
-        let obj_id = ObjectId::parse_str(id).unwrap();
-        let filter = doc! {"_id": obj_id};
-        let doc_detail = self
-            .docs
-            .delete_one(filter, None)
-            .ok()
-            .expect("Error deleting doc");
-        Ok(doc_detail)
-    }
-
-    pub fn update_doc(&self, id: &String, new_doc: Doc) -> Result<UpdateResult, Error> {
-        let obj_id = ObjectId::parse_str(id).unwrap();
-        let filter = doc! {"_id": obj_id};
-        let new_doc = doc! {
-            "$set":
-                {
-                    "id": new_doc.id,
-                    "info": new_doc.info,
-                },
-        };
-        let updated_doc = self
-            .docs
-            .update_one(filter, new_doc, None)
-            .ok()
-            .expect("Error updating doc");
-        Ok(updated_doc)
-    }
-
-    pub fn repo_state(&self) -> Result<Vec<String>, mongodb::error::Error> {
-        self.client.list_database_names(None, None)
     }
 }

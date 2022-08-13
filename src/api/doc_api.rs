@@ -1,30 +1,39 @@
-use crate::{models::doc_model::Doc, repository::mongodb_repo::MongoRepo};
-use mongodb::{bson::oid::ObjectId, results::InsertOneResult}; //modify here
+use crate::{
+    models::{
+        doc_model::Doc,
+        response_models::{IDResponse, InfoResponse},
+    },
+    repository::crud_repo::CrudRepo,
+};
+use mongodb::bson::oid::ObjectId; //modify here
 use rocket::{http::Status, serde::json::Json, State};
 
 #[post("/doc", data = "<new_doc>")]
 pub fn create_doc(
-    db: &State<MongoRepo>,
+    docs_crud: &State<Box<dyn CrudRepo<Doc>>>,
     new_doc: Json<Doc>,
-) -> Result<Json<InsertOneResult>, Status> {
+) -> Result<Json<IDResponse>, Status> {
     let data = Doc {
         id: None,
         info: new_doc.info.to_owned(),
     };
-    let doc_detail = db.create_doc(data);
+    let doc_detail = docs_crud.create(data);
     match doc_detail {
-        Ok(doc) => Ok(Json(doc)),
+        Ok(doc) => Ok(Json(IDResponse::from_str(doc.as_str()))),
         Err(_) => Err(Status::InternalServerError),
     }
 }
 
 #[get("/doc/<path>")]
-pub fn get_doc(db: &State<MongoRepo>, path: String) -> Result<Json<Doc>, Status> {
+pub fn get_doc(
+    docs_crud: &State<Box<dyn CrudRepo<Doc>>>,
+    path: String,
+) -> Result<Json<Doc>, Status> {
     let id = path;
     if id.is_empty() {
         return Err(Status::BadRequest);
     };
-    let doc_detail = db.get_doc(&id);
+    let doc_detail = docs_crud.get(&id);
     match doc_detail {
         Ok(doc) => Ok(Json(doc)),
         Err(_) => Err(Status::InternalServerError),
@@ -32,8 +41,8 @@ pub fn get_doc(db: &State<MongoRepo>, path: String) -> Result<Json<Doc>, Status>
 }
 
 #[get("/doc")]
-pub fn get_all_docs(db: &State<MongoRepo>) -> Result<Json<Vec<Doc>>, Status> {
-    let docs = db.get_all_docs();
+pub fn get_all_docs(docs_crud: &State<Box<dyn CrudRepo<Doc>>>) -> Result<Json<Vec<Doc>>, Status> {
+    let docs = docs_crud.get_all();
     match docs {
         Ok(docs) => Ok(Json(docs)),
         Err(_) => Err(Status::InternalServerError),
@@ -41,16 +50,19 @@ pub fn get_all_docs(db: &State<MongoRepo>) -> Result<Json<Vec<Doc>>, Status> {
 }
 
 #[delete("/doc/<path>")]
-pub fn delete_doc(db: &State<MongoRepo>, path: String) -> Result<Json<&str>, Status> {
+pub fn delete_doc(
+    docs_crud: &State<Box<dyn CrudRepo<Doc>>>,
+    path: String,
+) -> Result<Json<InfoResponse>, Status> {
     let id = path;
     if id.is_empty() {
         return Err(Status::BadRequest);
     };
-    let result = db.delete_doc(&id);
+    let result = docs_crud.delete(&id);
     match result {
         Ok(res) => {
-            if res.deleted_count == 1 {
-                return Ok(Json("Doc successfully deleted!"));
+            if res == 1 {
+                return Ok(Json(InfoResponse::from_str("Doc successfully deleted!")));
             } else {
                 return Err(Status::NotFound);
             }
@@ -61,10 +73,10 @@ pub fn delete_doc(db: &State<MongoRepo>, path: String) -> Result<Json<&str>, Sta
 
 #[put("/doc/<path>", data = "<new_doc>")]
 pub fn update_doc(
-    db: &State<MongoRepo>,
+    docs_crud: &State<Box<dyn CrudRepo<Doc>>>,
     path: String,
     new_doc: Json<Doc>,
-) -> Result<Json<Doc>, Status> {
+) -> Result<Json<IDResponse>, Status> {
     let id = path;
     if id.is_empty() {
         return Err(Status::BadRequest);
@@ -73,19 +85,12 @@ pub fn update_doc(
         id: Some(ObjectId::parse_str(&id).unwrap()),
         info: new_doc.info.to_owned(),
     };
-    let update_result = db.update_doc(&id, data);
+    let update_result = docs_crud.update(&id, data);
     match update_result {
-        Ok(update) => {
-            if update.matched_count == 1 {
-                let updated_doc_info = db.get_doc(&id);
-                return match updated_doc_info {
-                    Ok(doc) => Ok(Json(doc)),
-                    Err(_) => Err(Status::InternalServerError),
-                };
-            } else {
-                return Err(Status::NotFound);
-            }
-        }
+        Ok(update) => match update {
+            Some(id) => Ok(Json(IDResponse::from_str(id.as_str()))),
+            None => Err(Status::NotFound),
+        },
         Err(_) => Err(Status::InternalServerError),
     }
 }

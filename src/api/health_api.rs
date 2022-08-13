@@ -1,16 +1,19 @@
-use crate::{models::health_model::Health, repository::mongodb_repo::MongoRepo};
+use std::str::FromStr;
+
+use crate::{
+    models::states_models::{APIState, ApplicationState},
+    repository::database_state::DatabaseStateChecker,
+};
 use rocket::{http::Status, serde::json::Json, State};
 
 #[get("/health")]
-pub fn get_health(db: &State<MongoRepo>) -> Result<Json<Health>, Status> {
-    match db.repo_state() {
-        Ok(names) => Ok(Json(Health {
-            state: String::from("UP"),
-            databases: names.join(", "),
-        })),
-        Err(_) => Ok(Json(Health {
-            state: String::from("DOWN"),
-            databases: String::from("Failed to connect to database!"),
-        })),
-    }
+pub fn get_health(
+    db: &State<Box<dyn DatabaseStateChecker>>,
+) -> Result<Json<ApplicationState>, Status> {
+    Ok(Json(ApplicationState {
+        api_state: APIState {
+            status: String::from_str("UP").unwrap(),
+        },
+        database_state: db.get_state(),
+    }))
 }
