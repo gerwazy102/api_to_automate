@@ -28,3 +28,13 @@ export MONGODB_DATABASE=api_to_automate
 ## Unit testing
 
 There are simple unit tests in this api written. Start them with `cargo test`
+
+## SQLite mode
+
+You can do:
+```bash
+export DATABASE_TYPE=MEMORY
+```
+before starting application which will start it in SQLite3 mode. This mode allows to run without any external database but data you save is available only until app restarts.
+
+Any other value in `DATABASE_TYPE` variable will cause that app will start in mongo mode and will expect `MONGODB_URI` and `MONGODB_DATABASE` variables defined.
