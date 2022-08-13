@@ -38,3 +38,8 @@ export DATABASE_TYPE=MEMORY
 before starting application which will start it in SQLite3 mode. This mode allows to run without any external database but data you save is available only until app restarts.
 
 Any other value in `DATABASE_TYPE` variable will cause that app will start in mongo mode and will expect `MONGODB_URI` and `MONGODB_DATABASE` variables defined.
+
+
+###Contributing
+
+If you found any bugs please fell free to raise pull request! Contributions are welcome! Please be aware that by commiting code to this repository you agree to license it under MIT license!
