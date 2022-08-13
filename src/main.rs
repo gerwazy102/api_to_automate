@@ -8,6 +8,7 @@ extern crate rocket;
 //add imports below
 use api::doc_api::{create_doc, delete_doc, get_all_docs, get_doc, update_doc};
 use api::health_api::get_health;
+use cors::CORS;
 use models::doc_model::Doc;
 use repository::crud_repo::CrudRepo;
 use repository::database_state::DatabaseStateChecker;
@@ -17,6 +18,7 @@ use repository::sqlite_repo::SQLiteRepo;
 use std::env;
 extern crate dotenv;
 use dotenv::dotenv;
+mod cors;
 
 enum DatabaseType {
     Memory,
@@ -50,6 +52,7 @@ fn rocket() -> _ {
     };
 
     rocket::build()
+        .attach(CORS)
         .manage(crud_repo.unwrap())
         .manage(database_state_checker.unwrap())
         .mount("/", routes![create_doc])
