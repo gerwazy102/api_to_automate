@@ -39,6 +39,13 @@ before starting application which will start it in SQLite3 mode. This mode allow
 
 Any other value in `DATABASE_TYPE` variable will cause that app will start in mongo mode and will expect `MONGODB_URI` and `MONGODB_DATABASE` variables defined.
 
+### Stage deployment
+
+While deploying on stage/prod you'll need to specify variable:
+```bash
+ROCKET_ADDRESS=0.0.0.0
+```
+to bind api to all ips
 
 ###Contributing
 
